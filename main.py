@@ -1,12 +1,13 @@
 import argparse
+import datetime
 from tqdm import tqdm
 import pandas as pd
-from bs4 import BeautifulSoup
 from selenium import webdriver
 from time import sleep
 
 import gspread
 from df2gspread import df2gspread as d2g
+from df2gspread import gspread2df as g2d
 from oauth2client.service_account import ServiceAccountCredentials
 
 
@@ -43,26 +44,31 @@ driver.find_element_by_id('__BVID__65').clear()
 driver.find_element_by_id('__BVID__65').send_keys(args.sumgo_pw)
 
 driver.find_element_by_xpath('//*[@id="app-body"]/div/div/form/div/div[4]/button').click()
+try:
+    driver.find_element_by_xpath('//*[@id="__BVID__125___BV_modal_footer_"]/button').click()
+except:
+    print('no ad')
+
 sleep(3)
-driver.find_element_by_xpath('//*[@id="__BVID__99___BV_modal_body_"]/div[1]').click()
 
 last_height = driver.execute_script("return document.body.scrollHeight")
 while True:
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    sleep(1)
+    sleep(3)
     new_height = driver.execute_script("return document.body.scrollHeight")
     if new_height == last_height:
         break
     last_height = new_height
-
 sleep(3)
+
 request_list = driver.find_element_by_xpath('//*[@id="app-body"]/div/div[3]/div/ul')
 requests = request_list.find_elements_by_tag_name('li')
 
 links = []
 for request in requests:
-    link = request.find_elements_by_tag_name('a')[0].get_attribute('href')
-    links.append(link)
+    link = request.find_elements_by_tag_name('a')
+    if len(link) != 0:
+        links.append(link[0].get_attribute('href'))
 
 data = {}
 for idx, link in enumerate(tqdm(links)):
@@ -103,5 +109,16 @@ driver.quit()
 
 for k, v in data.items():
     df = pd.DataFrame(v)
+    df['크롤링 시간'] = datetime.datetime.now()
+
+    try:
+        df_org = g2d.download(spreadsheet_key, k, col_names=True, row_names=True, credentials=credentials)
+        cols = list(df_org.columns)
+        cols.remove('크롤링 시간')
+        df = pd.concat([df_org, df]).drop_duplicates(subset=cols)
+        df = df.reset_index(drop=True)
+    except:
+        pass
+
     d2g.upload(df, spreadsheet_key, k, credentials=credentials, row_names=True)
 
